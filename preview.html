@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xem Trước Kích Thước iPad &amp; Phone — Thiệp Cưới Hoàng Phúc &amp; Tường Vy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Quicksand", system-ui, -apple-system, sans-serif;
+      background: #e8e1d9;
+      color: #2c2422;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .preview-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(250, 246, 239, 0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(125, 0, 0, 0.14);
+      padding: 10px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      box-shadow: 0 2px 10px rgba(48, 22, 16, 0.06);
+    }
+    .bar-left, .bar-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .bar-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #7d0000;
+      margin-right: 4px;
+    }
+    .size-pill, .action-pill {
+      appearance: none;
+      border: 1px solid rgba(125, 0, 0, 0.24);
+      background: #ffffff;
+      color: #3a2d2b;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+    }
+    .size-pill:hover, .action-pill:hover {
+      border-color: #7d0000;
+      color: #7d0000;
+    }
+    .size-pill.active, .action-pill.active {
+      background: #7d0000;
+      border-color: #7d0000;
+      color: #ffffff;
+    }
+    .dim-badge {
+      font-size: 12px;
+      font-weight: 700;
+      color: #6b5753;
+      background: #f2ebe3;
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .stage-wrap {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px 16px 40px;
+      overflow: auto;
+    }
+    .scale-holder {
+      flex-shrink: 0;
+      position: relative;
+      transition: width 0.2s ease, height 0.2s ease;
+    }
+    .device-bezel {
+      transform-origin: top left;
+      background: #1c1918;
+      padding: 12px;
+      border-radius: 34px;
+      box-shadow: 0 22px 54px rgba(34, 18, 15, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+      transition: border-radius 0.2s ease, padding 0.2s ease, transform 0.2s ease;
+    }
+    .device-bezel.is-ipad {
+      padding: 14px;
+      border-radius: 26px;
+    }
+    .device-screen {
+      display: block;
+      border: 0;
+      background: #faf6ef;
+      border-radius: 24px;
+      overflow: hidden;
+      transition: width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
+    }
+    .device-bezel.is-ipad .device-screen {
+      border-radius: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header class="preview-bar">
+    <div class="bar-left">
+      <span class="bar-title">Xem trước:</span>
+      <button type="button" class="size-pill" data-device="phone">iPhone (390×844)</button>
+      <button type="button" class="size-pill" data-device="phone-sm">iPhone nhỏ (375×667)</button>
+      <button type="button" class="size-pill" data-device="ipad">iPad (768×1024)</button>
+      <button type="button" class="size-pill" data-device="ipad-air">iPad Air (820×1180)</button>
+      <button type="button" class="size-pill" data-device="ipad-pro">iPad Pro (1024×1366)</button>
+      <button type="button" class="size-pill" data-device="pc">PC (1366×820)</button>
+      <span class="dim-badge" id="dim-badge">390 × 844 px</span>
+    </div>
+    <div class="bar-right">
+      <button type="button" class="action-pill" id="btn-fit">Thu vừa màn hình</button>
+      <button type="button" class="action-pill" id="btn-rotate">Xoay ngang</button>
+      <button type="button" class="action-pill" id="btn-reload">↻ Tải lại hiệu ứng</button>
+      <a class="action-pill" href="index.html">Mở bản PC gốc</a>
+    </div>
+  </header>
+
+  <main class="stage-wrap" id="stage-wrap">
+    <div class="scale-holder" id="scale-holder">
+      <div class="device-bezel" id="device-bezel">
+        <iframe
+          class="device-screen"
+          id="device-frame"
+          src="index.html?v=20261119a12&preview=phone"
+          title="Xem trước Thiệp Cưới"
+        ></iframe>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const ASSET_VER = "20261119a12";
+      const PRESETS = {
+        phone: { w: 390, h: 844, label: "iPhone", ipad: false, preview: "phone" },
+        "phone-sm": { w: 375, h: 667, label: "iPhone nhỏ", ipad: false, preview: "phone" },
+        ipad: { w: 768, h: 1024, label: "iPad", ipad: true, preview: "ipad" },
+        "ipad-air": { w: 820, h: 1180, label: "iPad Air", ipad: true, preview: "ipad" },
+        "ipad-pro": { w: 1024, h: 1366, label: "iPad Pro", ipad: true, preview: "ipad" },
+        pc: { w: 1366, h: 820, label: "PC Desktop", ipad: true, preview: "pc" }
+      };
+
+      const params = new URLSearchParams(window.location.search);
+      let currentKey = PRESETS[params.get("device")] ? params.get("device") : "phone";
+      let landscape = params.get("orient") === "landscape";
+      let fitToScreen = params.get("fit") === "1";
+
+      const bezelEl = document.getElementById("device-bezel");
+      const frameEl = document.getElementById("device-frame");
+      const holderEl = document.getElementById("scale-holder");
+      const dimBadge = document.getElementById("dim-badge");
+      const btnRotate = document.getElementById("btn-rotate");
+      const btnFit = document.getElementById("btn-fit");
+      const btnReload = document.getElementById("btn-reload");
+      const pills = document.querySelectorAll(".size-pill[data-device]");
+
+      function syncFramePreviewMode() {
+        const preset = PRESETS[currentKey];
+        try {
+          frameEl.contentWindow?.postMessage(
+            { type: "wedding-preview-mode", mode: preset.preview },
+            "*"
+          );
+        } catch (_) {}
+      }
+
+      function applyLayout(updateUrl, reloadSrc) {
+        const preset = PRESETS[currentKey];
+        const canRotate = preset.preview !== "pc";
+        const useLandscape = canRotate && landscape;
+        const w = useLandscape ? preset.h : preset.w;
+        const h = useLandscape ? preset.w : preset.h;
+
+        bezelEl.classList.toggle("is-ipad", preset.ipad);
+        frameEl.style.width = w + "px";
+        frameEl.style.height = h + "px";
+
+        const bezelPad = preset.ipad ? 28 : 24;
+        const outerW = w + bezelPad;
+        const outerH = h + bezelPad;
+
+        let scale = 1;
+        if (fitToScreen) {
+          const barH = document.querySelector(".preview-bar")?.offsetHeight || 56;
+          const availW = Math.max(320, window.innerWidth - 36);
+          const availH = Math.max(320, window.innerHeight - barH - 48);
+          scale = Math.min(1, availW / outerW, availH / outerH);
+        }
+
+        bezelEl.style.width = outerW + "px";
+        bezelEl.style.height = outerH + "px";
+        bezelEl.style.transform = scale < 0.999 ? `scale(${scale.toFixed(4)})` : "none";
+        holderEl.style.width = Math.ceil(outerW * scale) + "px";
+        holderEl.style.height = Math.ceil(outerH * scale) + "px";
+
+        dimBadge.textContent = `${w} × ${h} px · ${preset.label}${scale < 0.999 ? ` (${Math.round(scale * 100)}%)` : " (100% nét chuẩn)"}`;
+        btnRotate.style.display = canRotate ? "" : "none";
+        btnRotate.textContent = useLandscape ? "Xoay dọc" : "Xoay ngang";
+        btnRotate.classList.toggle("active", useLandscape);
+        btnFit.classList.toggle("active", fitToScreen);
+
+        pills.forEach((p) => p.classList.toggle("active", p.dataset.device === currentKey));
+
+        if (reloadSrc) {
+          frameEl.src = `index.html?v=${ASSET_VER}&preview=${encodeURIComponent(preset.preview)}&t=${Date.now()}`;
+        } else {
+          syncFramePreviewMode();
+        }
+
+        if (updateUrl) {
+          const next = new URL(window.location.href);
+          next.searchParams.set("device", currentKey);
+          if (useLandscape) next.searchParams.set("orient", "landscape");
+          else next.searchParams.delete("orient");
+          if (fitToScreen) next.searchParams.set("fit", "1");
+          else next.searchParams.delete("fit");
+          window.history.replaceState({}, "", next.toString());
+        }
+      }
+
+      frameEl.addEventListener("load", syncFramePreviewMode);
+
+      pills.forEach((pill) => {
+        pill.addEventListener("click", () => {
+          currentKey = pill.dataset.device;
+          applyLayout(true, false);
+        });
+      });
+
+      btnRotate.addEventListener("click", () => {
+        landscape = !landscape;
+        applyLayout(true, false);
+      });
+
+      btnFit.addEventListener("click", () => {
+        fitToScreen = !fitToScreen;
+        applyLayout(true, false);
+      });
+
+      btnReload.addEventListener("click", () => {
+        applyLayout(false, true);
+      });
+
+      window.addEventListener("resize", () => {
+        if (fitToScreen) applyLayout(false, false);
+      });
+
+      applyLayout(false, true);
+    })();
+  </script>
+</body>
+</html>
