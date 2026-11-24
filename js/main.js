@@ -70,7 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el && value !== undefined && value !== null) el.textContent = value;
   }
 
-  const CACHE_VER = "20261119a12";
+  const CACHE_VER = "20261124a2";
   const RESPONSIVE_ASSETS = new Set([
     "assets/images/hero-anhnen.jpg",
     "assets/images/hero-thumb.jpg",
@@ -572,14 +572,54 @@ document.addEventListener("DOMContentLoaded", () => {
   syncAudioUI();
 
   /* ------------------------------------------------------------------------
-     6. WISHES (LOCALSTORAGE + FLOATING DANMAKU STREAM + SAVED LIST)
+     6. WISHES (SHARED API + LOCALSTORAGE CACHE + FLOATING STREAM)
      ------------------------------------------------------------------------ */
+  const isHttpOrigin = window.location.protocol.startsWith("http");
+  const WISHES_API_URL = isHttpOrigin ? (cfg.wishesApiUrl || "/api/wishes") : "";
+  const RSVP_API_URL = isHttpOrigin ? (cfg.rsvpWebhookUrl || "/api/rsvp") : "";
+
+  function isCrossOriginEndpoint(url) {
+    if (!url) return false;
+    try {
+      return new URL(url, window.location.href).origin !== window.location.origin;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function appendQueryParams(url, paramsObj) {
+    const u = new URL(url, window.location.href);
+    Object.entries(paramsObj || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
+    });
+    return u.toString();
+  }
+
   function isRemovedSeedWish(w) {
     return (
       w &&
       String(w.name || "").trim() === "Team Thiết Kế" &&
       String(w.message || "").includes("Hẹn gặp Phúc & Vy ngày 29/11")
     );
+  }
+
+  function wishKey(w) {
+    return `${String(w?.name || "").trim()}::${String(w?.message || "").trim()}`;
+  }
+
+  function mergeWithSeedWishes(remoteWishes) {
+    const seed = Array.isArray(cfg.initialWishes) ? cfg.initialWishes : [];
+    const merged = [];
+    const seen = new Set();
+
+    for (const item of [...(Array.isArray(remoteWishes) ? remoteWishes : []), ...seed]) {
+      if (!item || !item.name || !item.message || isRemovedSeedWish(item)) continue;
+      const key = wishKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+    return merged;
   }
 
   function getWishes() {
@@ -604,6 +644,43 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem(STORAGE_WISHES_KEY, JSON.stringify(list));
     } catch (err) {
       console.warn(err);
+    }
+  }
+
+  let wishesSyncInFlight = false;
+  async function syncRemoteWishes(options = {}) {
+    if (!WISHES_API_URL || wishesSyncInFlight) return;
+    wishesSyncInFlight = true;
+    try {
+      const fetchUrl = isCrossOriginEndpoint(WISHES_API_URL)
+        ? appendQueryParams(WISHES_API_URL, { type: "wishes", t: Date.now() })
+        : WISHES_API_URL;
+      const res = isCrossOriginEndpoint(WISHES_API_URL)
+        ? await fetch(fetchUrl)
+        : await fetch(fetchUrl, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || !data.ok || !data.configured || !Array.isArray(data.wishes)) return;
+
+      const prev = getWishes();
+      const prevKeys = new Set(prev.map(wishKey));
+      const merged = mergeWithSeedWishes(data.wishes);
+      const changed =
+        merged.length !== prev.length ||
+        merged.some((w, idx) => !prev[idx] || wishKey(w) !== wishKey(prev[idx]));
+
+      if (changed) {
+        saveWishes(merged);
+        renderSavedWishesModal();
+        if (options.announceNew) {
+          const newest = data.wishes.find((w) => !prevKeys.has(wishKey(w)));
+          if (newest) pushFloatingWish(newest);
+        }
+      }
+    } catch (err) {
+      console.warn("Wishes sync skipped:", err);
+    } finally {
+      wishesSyncInFlight = false;
     }
   }
 
@@ -667,6 +744,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderSavedWishesModal();
   startWishStream();
+  syncRemoteWishes({ announceNew: true });
+  setInterval(() => {
+    if (document.visibilityState === "visible") {
+      syncRemoteWishes({ announceNew: true });
+    }
+  }, 20000);
 
   const wishesContainer = document.getElementById("floating-wishes-container");
   const syncFloatingWishesHeroState = () => {
@@ -740,6 +823,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     document.getElementById("wish-tab-write")?.classList.toggle("hidden", tabName !== "write");
     document.getElementById("wish-tab-list")?.classList.toggle("hidden", tabName !== "list");
+    if (tabName === "list") syncRemoteWishes();
     openModal("modal-wish");
   }
 
@@ -756,8 +840,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setText("wish-char-count", String(wishContentEl.value.length));
   });
 
-  document.getElementById("wish-form")?.addEventListener("submit", (e) => {
+  document.getElementById("wish-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn?.disabled) return;
+
     const name = document.getElementById("wish-name")?.value.trim();
     const message = wishContentEl?.value.trim();
     if (!name || !message) {
@@ -765,23 +852,75 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const wishes = getWishes();
-    const entry = { name, message, createdAt: new Date().toISOString() };
-    wishes.unshift(entry);
-    saveWishes(wishes);
+    const entry = {
+      id: `w_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      message,
+      createdAt: new Date().toISOString()
+    };
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Đang gửi...";
+    }
+
+    let remoteSaved = false;
+    let storageUnconfigured = false;
+
+    try {
+      if (WISHES_API_URL) {
+        const crossOrigin = isCrossOriginEndpoint(WISHES_API_URL);
+        const payload = crossOrigin ? { action: "wish", ...entry } : entry;
+        const res = await fetch(WISHES_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": crossOrigin ? "text/plain;charset=utf-8" : "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.ok && Array.isArray(data.wishes)) {
+          saveWishes(mergeWithSeedWishes(data.wishes));
+          remoteSaved = true;
+        } else if (res.status === 503 && data?.configured === false) {
+          storageUnconfigured = true;
+        }
+      }
+    } catch (err) {
+      console.warn("POST wish failed, saving locally:", err);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Hoàn tất";
+      }
+    }
+
+    if (!remoteSaved) {
+      saveWishes(mergeWithSeedWishes([entry, ...getWishes()]));
+    }
+
     renderSavedWishesModal();
     pushFloatingWish(entry);
 
     e.target.reset();
     setText("wish-char-count", "0");
     closeModal("modal-wish");
-    showToast("Cảm ơn lời chúc ngọt ngào của bạn! ❤️");
+    showToast(
+      remoteSaved
+        ? "Cảm ơn lời chúc ngọt ngào của bạn! ❤️"
+        : storageUnconfigured
+          ? "Đã lưu trên máy này — hãy kết nối Upstash Redis trên Vercel để mọi người cùng thấy ❤️"
+          : "Lời chúc đã lưu tạm trên thiết bị của bạn ❤️"
+    );
     burstPetals();
   });
 
   // RSVP form submit
   document.getElementById("rsvp-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn?.disabled) return;
+
     const name = document.getElementById("rsvp-name")?.value.trim();
     const status = document.querySelector('input[name="rsvp-status"]:checked')?.value || "yes";
     const side = document.querySelector('input[name="rsvp-side"]:checked')?.value || "Nhà gái";
@@ -793,6 +932,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Đang gửi...";
+    }
+
     const record = { name, status, side, phone, note, createdAt: new Date().toISOString() };
     try {
       const existing = JSON.parse(localStorage.getItem(STORAGE_RSVP_KEY) || "[]");
@@ -802,20 +946,40 @@ document.addEventListener("DOMContentLoaded", () => {
       console.warn(err);
     }
 
-    if (cfg.rsvpWebhookUrl) {
-      fetch(cfg.rsvpWebhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(record)
-      }).catch(() => {});
+    let storageUnconfigured = false;
+    try {
+      if (RSVP_API_URL) {
+        const crossOrigin = isCrossOriginEndpoint(RSVP_API_URL);
+        const payload = crossOrigin ? { action: "rsvp", ...record } : record;
+        const res = await fetch(RSVP_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": crossOrigin ? "text/plain;charset=utf-8" : "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+        if (res.status === 503) {
+          const data = await res.json().catch(() => null);
+          if (data?.configured === false) storageUnconfigured = true;
+        }
+      }
+    } catch (err) {
+      console.warn("POST rsvp failed:", err);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Gửi đến cô dâu chú rể";
+      }
     }
 
     e.target.reset();
     closeModal("modal-rsvp");
     showToast(
-      status === "yes"
-        ? `Cảm ơn ${name}! Hẹn gặp bạn tại ngày vui nhé 🥂`
-        : `Cảm ơn ${name} đã phản hồi. Rất trân trọng tấm lòng của bạn!`
+      storageUnconfigured
+        ? "Đã ghi nhận tạm — nhớ kết nối Upstash Redis trên Vercel để lưu chung!"
+        : status === "yes"
+          ? `Cảm ơn ${name}! Hẹn gặp bạn tại ngày vui nhé 🥂`
+          : `Cảm ơn ${name} đã phản hồi. Rất trân trọng tấm lòng của bạn!`
     );
     burstPetals();
   });

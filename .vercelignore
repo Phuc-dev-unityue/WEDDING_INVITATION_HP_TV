@@ -2,6 +2,8 @@ server.py
 preview.html
 README.md
 _headers
+.local-data
+google-apps-script.gs
 assets/images/bride-portrait.jpg
 assets/images/groom-portrait.jpg
 assets/images/gallery-moment.jpg

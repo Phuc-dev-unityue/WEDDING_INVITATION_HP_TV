@@ -134,6 +134,7 @@ window.WEDDING_CONFIG = {
     { name: "Gia đình Bác Tư", message: "Chúc hai cháu thuận vợ thuận chồng, trăm năm tình viên mãn, sớm sinh quý tử!" }
   ],
 
-  // 11. WEBHOOK LƯU RSVP TỪ XA (TÙY CHỌN: Google Apps Script / Formspree)
-  rsvpWebhookUrl: ""
+  // 11. GOOGLE SHEETS APPS SCRIPT WEB APP (ĐỒNG BỘ LƯU BÚT & RSVP CHO MỌI THIẾT BỊ)
+  wishesApiUrl: "https://script.google.com/macros/s/AKfycbzBmzXwQsmrd8ChGFbTbgxOco9sPd7rsU6NB_a1aqkr3WMm02a4Q8V8qANtVaUA-tKvmA/exec",
+  rsvpWebhookUrl: "https://script.google.com/macros/s/AKfycbzBmzXwQsmrd8ChGFbTbgxOco9sPd7rsU6NB_a1aqkr3WMm02a4Q8V8qANtVaUA-tKvmA/exec"
 };
