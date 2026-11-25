@@ -70,21 +70,24 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el && value !== undefined && value !== null) el.textContent = value;
   }
 
-  const CACHE_VER = "20261124a2";
-  const RESPONSIVE_ASSETS = new Set([
-    "assets/images/hero-anhnen.jpg",
-    "assets/images/hero-thumb.jpg",
-    "assets/images/story-anh1.jpg",
-    "assets/images/groom-anh2.jpg",
-    "assets/images/bride-anh3.jpg",
-    "assets/images/welcome-anh4.jpg",
-    "assets/images/calendar-anh5.jpg",
-    "assets/images/bride-anh3-avatar.jpg",
-    "assets/images/groom-anh2-avatar.jpg",
-    "assets/images/album-wide-1.jpg",
-    "assets/images/album-p1.jpg",
-    "assets/images/album-p2.jpg",
-    "assets/images/album-wide-2.jpg",
+  const CACHE_VER = "20261125a1";
+  const PC_MEDIA_QUERY = "(min-width: 1200px) and (max-resolution: 1.15dppx)";
+  const RESPONSIVE_SPECS = {
+    "assets/images/hero-anhnen.jpg": { w1: 500, w2: 1080, sizes: "(max-width: 599px) 74vw, 312px", hasPc: true },
+    "assets/images/hero-thumb.jpg": { w1: 68, w2: 240, sizes: "34px", hasPc: true },
+    "assets/images/story-anh1.jpg": { w1: 512, w2: 960, sizes: "(max-width: 599px) 66vw, 260px", hasPc: true },
+    "assets/images/groom-anh2.jpg": { w1: 500, w2: 1000, sizes: "(max-width: 599px) 44vw, 275px", hasPc: true },
+    "assets/images/bride-anh3.jpg": { w1: 500, w2: 1000, sizes: "(max-width: 599px) 44vw, 275px", hasPc: true },
+    "assets/images/welcome-anh4.jpg": { w1: 520, w2: 1000, sizes: "(max-width: 599px) 64vw, 272px", hasPc: true },
+    "assets/images/calendar-anh5.jpg": { w1: 850, w2: 1440, sizes: "(max-width: 599px) 90vw, 460px", hasPc: true },
+    "assets/images/bride-anh3-avatar.jpg": { w1: 180, w2: 392, sizes: "(max-width: 599px) 84px, 94px", hasPc: true },
+    "assets/images/groom-anh2-avatar.jpg": { w1: 180, w2: 392, sizes: "(max-width: 599px) 84px, 94px", hasPc: true },
+    "assets/images/album-wide-1.jpg": { w1: 840, w2: 1680, sizes: "(max-width: 599px) 76vw, 468px", hasPc: true },
+    "assets/images/album-p1.jpg": { w1: 500, w2: 1200, sizes: "(max-width: 599px) 44vw, 269px", hasPc: true },
+    "assets/images/album-p2.jpg": { w1: 500, w2: 1200, sizes: "(max-width: 599px) 44vw, 269px", hasPc: true },
+    "assets/images/album-wide-2.jpg": { w1: 840, w2: 1680, sizes: "(max-width: 599px) 76vw, 468px", hasPc: true }
+  };
+  const ALWAYS_HD_ASSETS = new Set([
     "assets/images/qr-girl.png",
     "assets/images/qr-man.png"
   ]);
@@ -93,29 +96,66 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(path).replace(/(\.[a-z0-9]+)$/i, "-hd$1");
   }
 
+  function toPcPath(path) {
+    return String(path).replace(/(\.[a-z0-9]+)$/i, "-pc$1");
+  }
+
   function applyResponsiveImg(imgEl, rawPath) {
     if (!imgEl || !rawPath) return;
-    if (RESPONSIVE_ASSETS.has(rawPath)) {
-      const src1x = `${rawPath}?v=${CACHE_VER}`;
-      const src2x = `${toHdPath(rawPath)}?v=${CACHE_VER}`;
-      imgEl.src = src1x;
-      imgEl.srcset = `${src1x} 1x, ${src2x} 2x`;
-      imgEl.removeAttribute("sizes");
-    } else {
+    const parentPic = imgEl.parentElement && imgEl.parentElement.tagName === "PICTURE" ? imgEl.parentElement : null;
+    const pcSource = parentPic ? parentPic.querySelector("source[data-pc-source], source") : null;
+
+    if (ALWAYS_HD_ASSETS.has(rawPath)) {
+      if (pcSource) pcSource.remove();
       imgEl.removeAttribute("srcset");
       imgEl.removeAttribute("sizes");
-      imgEl.src = rawPath;
+      const hdSrc = `${toHdPath(rawPath)}?v=${CACHE_VER}`;
+      if (imgEl.getAttribute("src") !== hdSrc) imgEl.setAttribute("src", hdSrc);
+      return;
+    }
+    const spec = RESPONSIVE_SPECS[rawPath];
+    if (spec) {
+      const src1x = `${rawPath}?v=${CACHE_VER}`;
+      const src2x = `${toHdPath(rawPath)}?v=${CACHE_VER}`;
+      const srcsetVal = `${src1x} ${spec.w1}w, ${src2x} ${spec.w2}w`;
+      if (pcSource) {
+        if (spec.hasPc) {
+          const pcSrc = `${toPcPath(rawPath)}?v=${CACHE_VER}`;
+          if (pcSource.getAttribute("media") !== PC_MEDIA_QUERY) pcSource.setAttribute("media", PC_MEDIA_QUERY);
+          if (pcSource.getAttribute("srcset") !== pcSrc) pcSource.setAttribute("srcset", pcSrc);
+        } else {
+          pcSource.remove();
+        }
+      }
+      if (imgEl.getAttribute("srcset") !== srcsetVal) imgEl.setAttribute("srcset", srcsetVal);
+      if (imgEl.getAttribute("sizes") !== spec.sizes) imgEl.setAttribute("sizes", spec.sizes);
+      if (imgEl.getAttribute("src") !== src1x) imgEl.setAttribute("src", src1x);
+    } else {
+      if (pcSource) pcSource.remove();
+      imgEl.removeAttribute("srcset");
+      imgEl.removeAttribute("sizes");
+      if (imgEl.getAttribute("src") !== rawPath) imgEl.setAttribute("src", rawPath);
     }
   }
 
-  function buildResponsiveImgAttrs(rawPath) {
+  function buildPictureHtml(rawPath, imgAttrs) {
     if (!rawPath) return "";
-    if (RESPONSIVE_ASSETS.has(rawPath)) {
+    const extra = imgAttrs ? ` ${imgAttrs}` : "";
+    if (ALWAYS_HD_ASSETS.has(rawPath)) {
+      return `<img src="${escapeHTML(`${toHdPath(rawPath)}?v=${CACHE_VER}`)}"${extra}>`;
+    }
+    const spec = RESPONSIVE_SPECS[rawPath];
+    if (spec) {
       const src1x = escapeHTML(`${rawPath}?v=${CACHE_VER}`);
       const src2x = escapeHTML(`${toHdPath(rawPath)}?v=${CACHE_VER}`);
-      return `src="${src1x}" srcset="${src1x} 1x, ${src2x} 2x"`;
+      const imgTag = `<img src="${src1x}" srcset="${src1x} ${spec.w1}w, ${src2x} ${spec.w2}w" sizes="${escapeHTML(spec.sizes)}"${extra}>`;
+      if (spec.hasPc) {
+        const pcSrc = escapeHTML(`${toPcPath(rawPath)}?v=${CACHE_VER}`);
+        return `<picture><source data-pc-source media="${PC_MEDIA_QUERY}" srcset="${pcSrc}">${imgTag}</picture>`;
+      }
+      return imgTag;
     }
-    return `src="${escapeHTML(rawPath)}"`;
+    return `<img src="${escapeHTML(rawPath)}"${extra}>`;
   }
 
   function setAttr(id, attr, value) {
@@ -153,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : "";
     const src = gift.qrImage || fallbackUrl;
     if (src) {
-      return `<img ${buildResponsiveImgAttrs(src)} alt="QR ${escapeHTML(gift.ownerUpper)}" loading="lazy" data-fallback="${escapeHTML(svg)}">`;
+      return buildPictureHtml(src, `alt="QR ${escapeHTML(gift.ownerUpper)}" loading="lazy" data-fallback="${escapeHTML(svg)}"`);
     }
     return svg;
   }
@@ -214,7 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
           return `
           <div class="gift-row ${reversed}" data-anim="${slideDir}" data-delay="${(0.08 + idx * 0.16).toFixed(2)}">
             <div class="gift-avatar-ring">
-              <img ${buildResponsiveImgAttrs(g.avatar)} alt="${escapeHTML(g.roleLabel)}">
+              ${buildPictureHtml(g.avatar, `alt="${escapeHTML(g.roleLabel)}"`)}
             </div>
             <div class="gift-bank-card">
               <div class="gift-bank-meta">
@@ -271,7 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
         <figure class="album-tile ${layoutClass}" data-gallery-idx="${idx}" data-anim="${animType}" data-delay="${(Math.min(idx, 5) * 0.08).toFixed(2)}">
           ${overlayWord}
-          <img ${buildResponsiveImgAttrs(item.src)} alt="${escapeHTML(item.caption || "Ảnh cưới")}" loading="lazy">
+          ${buildPictureHtml(item.src, `alt="${escapeHTML(item.caption || "Ảnh cưới")}" loading="lazy"`)}
         </figure>
       `;
       })
@@ -1013,7 +1053,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!items.length || !lbOverlay || !lbImg) return;
     lbIndex = (index + items.length) % items.length;
     const item = items[lbIndex];
-    const lbSrc = RESPONSIVE_ASSETS.has(item.src) ? `${toHdPath(item.src)}?v=${CACHE_VER}` : item.src;
+    const lbSrc = RESPONSIVE_SPECS[item.src] ? `${toHdPath(item.src)}?v=${CACHE_VER}` : item.src;
     lbImg.removeAttribute("srcset");
     lbImg.src = lbSrc;
     lbImg.alt = item.caption || "";
